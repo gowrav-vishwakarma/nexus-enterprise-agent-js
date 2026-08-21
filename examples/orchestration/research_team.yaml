@@ -1,0 +1,57 @@
+version: "1"
+prompts_module: ./research_team_prompts.ts
+root: research_team
+
+defaults:
+  llm: &default_llm
+    provider: openai
+    model: ${ENV:OPENAI_MODEL|gpt-4o}
+    api_key: ${ENV:OPENAI_API_KEY|mock-key}
+
+storage:
+  adapter: memory
+  adapter_config: {}
+
+# Tools are registered on a pre-built ToolRegistry in run_team.ts.
+plugins: {}
+
+agents:
+  supervisor:
+    llm: *default_llm
+    persona:
+      role: Supervisor
+      goal: Coordinate the research team
+      prompt: supervisor_system
+      prompt_args:
+        domain: finance
+
+  researcher:
+    llm: *default_llm
+    toolset: researcher
+    persona:
+      role: Researcher
+      goal: Gather facts from the web
+      prompt: researcher_system
+      prompt_args:
+        domain: finance
+
+  analyst:
+    llm: *default_llm
+    toolset: analyst
+    persona:
+      role: Analyst
+      goal: Analyze structured data
+      prompt: analyst_system
+      prompt_args:
+        domain: finance
+
+groups:
+  analysis_pipeline:
+    pattern: pipeline
+    session_id_prefix: pipe_
+    members: [researcher, analyst]
+
+  research_team:
+    pattern: supervisor
+    session_id_prefix: team_
+    members: [supervisor, analysis_pipeline]

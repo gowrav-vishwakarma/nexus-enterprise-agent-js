@@ -1,0 +1,151 @@
+/** Default prompt templates and constants for the Nexus Agent Framework. */
+
+export const DEFAULT_RCS_SYSTEM_BLOCK = `## Context Compression Instructions (_context_updates)
+
+You have access to an optional parameter \`_context_updates\` in every tool call.
+This parameter allows you to compress historical tool results to save context window space.
+
+### How it works:
+
+1. Tool results in your context may be tagged with \`[TC{n}]\` (e.g., \`[TC1]\`, \`[TC2]\`)
+2. These tags indicate results that have NOT yet been summarized
+3. When calling your next tool or any tool in distant future, you CAN include \`_context_updates\` to summarize old TCs
+4. Pass an empty list if you don't want to summarize anything this turn
+
+### Format:
+
+To summarize two earlier results:
+
+\`\`\`
+_context_updates = [
+    {"tc_id": "TC1", "summary": "Brief summary of TC1's result"},
+    {"tc_id": "TC2", "summary": "Brief summary of TC2's result"},
+]
+\`\`\`
+
+To summarize nothing this turn, send an empty list (or omit the parameter):
+
+\`\`\`
+_context_updates = []
+\`\`\`
+
+### Rules:
+- Only summarize TCs that are tagged with \`[TC{n}]\` in your current context
+- Summaries should be CONCISE but preserve KEY information (numbers, names, URLs, code snippets)
+- Every \`summary\` must be real text. Never send an empty summary and never send \`"[]"\`
+  as a summary — to summarize nothing, send the empty list shown above instead
+- A TC you do not summarize simply keeps its full result and stays available later
+- if you think you might need the same data again in the future, do not summarize it to save your future tool call to get same data again
+- You may summarize 0, some, or all tagged TCs each turn
+- Do NOT reference TCs from other sessions or groups
+- THINK MANY TIMES BEFORE SUMMARIZING A TC AS IF YOU SUMMARIZE IT, YOU WILL NOT BE ABLE TO GET THE FULL DATA AGAIN IN NEXT TUNR AND YOUR REPLY TO ACTUAL QUERY CAN BE INCOMPLETE OR INCORRECT.
+- SO ONLY SUMMARIZE IF YOU ARE SURE YOU WILL NOT NEED THE FULL DATA AGAIN IN NEXT TURN. OR BEST IF YOU HAVE FRAMED YOUR FINAL ANSWER AND USER HAS ASKED SOMETHING DIFFERENT THAT WILL NOT NEED THE OLD FULL DATA AGAIN.
+
+### Example:
+
+Instead of keeping full 5000-token file content:
+  TC1 summary: "main.py: Flask app with 3 routes (/health, /users, /orders), uses SQLAlchemy, 247 lines"
+
+Instead of keeping full test output:
+  TC2 summary: "Tests: 12 passed, 2 failed (validation and auth tests)"
+
+This compression is done IN-LINE with your tool call - no extra API calls needed.
+`;
+
+export const DEFAULT_COMPACTOR_PROMPT = `A tool call was made during an AI agent run and returned the result below.
+The agent has not yet compressed this result and the context window is at risk of overflowing.
+
+Your job: Write a 1-3 sentence factual summary of the most important information in the result.
+Focus on facts that an agent would need to reference later.
+Always produce a summary. If the result is an error or is mostly empty, say so briefly
+(e.g. "Request failed: timeout") rather than returning nothing.
+
+Tool: {tool_name}
+Input: {tool_input}
+Result:
+---
+{raw_response}
+---
+
+Compact summary:`;
+
+export const DEFAULT_SYSTEM_TEMPLATE = `You are {{ persona.role }}.
+
+Goal: {{ persona.goal }}
+
+{% if persona.backstory %}
+Background: {{ persona.backstory }}
+{% endif %}
+
+{% if user_memory %}
+## About this user
+{% for key, value in user_memory.items() %}
+- {{ key }}: {{ value }}
+{% endfor %}
+{% endif %}
+
+{% if summary_text %}
+## Conversation Summary
+{{ summary_text }}
+{% endif %}
+
+{% if state %}
+## Session state
+{% for key, value in state.items() %}
+- {{ key }}: {{ value }}
+{% endfor %}
+{% endif %}
+
+{% if metadata.nexus_delegation %}
+## Delegated task
+You are working as a sub-agent inside team "{{ metadata.nexus_delegation.group }}"{% if metadata.nexus_delegation.delegated_by %}, delegated by "{{ metadata.nexus_delegation.delegated_by }}"{% endif %}.
+Use the session state above as shared context. Return a focused result for your part of the task only.
+{% endif %}
+
+Today's date: {{ current_date }}`;
+
+export const DEFAULT_ENTITY_EXTRACTION_PROMPT = `Extract key facts and entities from the following conversation. Return as a JSON object with string keys and string values.
+
+Conversation:
+{conversation}
+
+Extract: names, numbers, dates, URLs, key findings, decisions made.
+Return ONLY valid JSON, no markdown formatting.`;
+
+export const DEFAULT_MEMORY_CURATOR_PROMPT = `You are a memory curator for an AI agent. Read the recent conversation and decide what durable information is worth remembering across future chats. Keep memory MINIMAL and high-signal.
+
+Return ONLY a JSON object with this exact shape (no markdown fences, no commentary):
+{"entities": {"fact_key": "concise fact value"}}
+
+Rules:
+- entities: durable, stable facts (names, ids, preferences, decisions). Use short, stable keys so updates overwrite cleanly. Omit ephemeral details.
+- If nothing is worth remembering, return {"entities": {}}.
+- Prefer updating existing keys over adding near-duplicates.
+
+Existing entities (JSON, may be empty):
+{existing_entities}
+
+Recent conversation:
+{conversation}
+
+JSON:`;
+
+export const DEFAULT_SESSION_MEMORY_CURATOR_PROMPT = DEFAULT_MEMORY_CURATOR_PROMPT;
+
+export const DEFAULT_CONTEXT_SUMMARY_PROMPT = `You are summarizing part of an ongoing agent conversation so older turns can be removed from context while preserving important facts.
+
+Write a concise factual summary of the turns below. If an existing summary is provided, merge new information into it (do not repeat verbatim). Keep names, numbers, decisions, and open tasks. Omit filler.
+
+Existing summary (may be empty):
+{existing_summary}
+
+Turns to fold into the summary:
+{turns_to_summarize}
+
+Updated summary:`;
+
+export const DEFAULT_CONTEXT_UPDATES_PARAM_DESC = `_context_updates (list of dict, optional): Context compression updates for previous tool call results.
+Each dict has: {"tc_id": "TC{n}", "summary": "brief summary"}.
+Every summary must be non-empty text. Pass [] if no compression is needed this turn.
+Only summarize TCs tagged with [TC{n}] in your context.
+This is OPTIONAL - include it to compress historical tool results and save context space.`;

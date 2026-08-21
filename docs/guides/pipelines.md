@@ -1,0 +1,324 @@
+# Pipelines: choose and run the right flow
+
+**Who this is for:** Developers who need to pick a Nexus pipeline (text, multi-agent, voice, or channels) and know which example to run.
+
+## Key terms
+
+- **Pipeline** — A fixed sequence of stages that turn user input into a reply. Nexus offers several; you pick one per use case.
+- **Agent loop** — The text pattern: LLM → maybe tools → LLM again until done (ReAct).
+- **Modality** — How media is handled: `text`, `vision_text`, `voice_cascaded`, `voice_s2s`.
+- **Pattern** — How multi-agent teams coordinate: `supervisor`, `pipeline`, `parallel`.
+- **Transport** — How audio moves between client and runtime (WebSocket, in-memory tests).
+
+## Why this guide exists
+
+Nexus is not one pipeline — it is a toolkit. The same agent config (persona, tools, memory) can run as plain text, inside a team, or behind a voice stack. This page maps **what each pipeline does**, **when to use it**, and **where the runnable TypeScript examples live**.
+
+GPU media servers and the browser Voice Lab stay in the [Python package](https://github.com/gowrav-vishwakarma/nexus-enterprise-agent). TypeScript ships mock STT/TTS and an energy VAD.
+
+For taking charge when tool results or tenant state change, see [runtime-control.md](runtime-control.md).
+
+## Quick decision table
+
+| Your goal | Pipeline | Entry point |
+|-----------|----------|-------------|
+| Chat agent with tools (text) | Text agent loop | `AgentRunner` or `OrchestrationRuntime` |
+| Lead agent delegates to specialists | Multi-agent `supervisor` | YAML `groups.pattern: supervisor` |
+| Fixed step-by-step workflow | Multi-agent `pipeline` | YAML `groups.pattern: pipeline` |
+| Same question to several agents at once | Multi-agent `parallel` | YAML `groups.pattern: parallel` |
+| Voice: separate STT, LLM, TTS (local mocks) | Cascaded voice | `RealtimeRuntime` + `provider: mock` |
+| Voice: real GPU STT/TTS | Cascaded voice on Python | Python Voice Lab — [voice-lab.md](voice-lab.md) |
+| Voice: one realtime audio model | Speech-to-speech (S2S) | `SpeechToSpeechPipeline`, `modality: voice_s2s` |
+| Voice team (responder + silent lookup) | Voice team | `buildVoiceTeam()`, `pattern: voice_team` |
+| Images + text | Vision input | `UserInput.from_image_bytes()` + your runner |
+| Telegram / WhatsApp / voice notes | Channels | `ChannelRouter` + channel adapter |
+
+```mermaid
+flowchart TD
+  input[User input]
+  text[Text agent loop]
+  multi[Multi-agent team]
+  cascade[Cascaded voice STT-LLM-TTS]
+  s2s[Speech-to-speech]
+  channels[Channels router]
+
+  input --> text
+  input --> multi
+  input --> cascade
+  input --> s2s
+  input --> channels
+  cascade --> text
+  s2s --> text
+  channels --> text
+```
+
+Every voice and channel pipeline still runs the **text agent loop** at the LLM stage. Your tools, memory, and persona stay the same.
+
+---
+
+## 1. Text agent loop (ReAct)
+
+**What it does:** Send messages to the LLM. If the model requests tools, run them, append results, and call the LLM again. Stop when the model returns plain text (or you hit `max_turns`).
+
+**When to use it:** Default for chat APIs, backends, and any non-voice agent.
+
+```ts
+import { AgentRunner, createRunContext } from "nexus-enterprise-agent";
+
+const runner = new AgentRunner({
+  config,
+  toolRegistry: registry,
+  runContext: ctx,
+});
+const result = await runner.run("What is the weather in Paris?");
+console.log(result.finalResponse);
+```
+
+**YAML equivalent:** Set `root` to a single agent name in your manifest, then use `OrchestrationRuntime.fromManifest()`.
+
+| Parameter | Where | Notes |
+|-----------|-------|-------|
+| `max_turns` | `AgentConfig.turns` | Caps loop iterations |
+| `stop_on_empty_tool_calls` | `turns` | Stop when LLM returns no tool calls (default `true`) |
+| `toolset` | `AgentConfig` | Name or list of toolset packs defined on the registry |
+| `tool_plugins` | `AgentConfig` | Legacy allow-list of plugin namespaces |
+
+**Examples:** [examples/orchestration/run_team.ts](../../examples/orchestration/run_team.ts), [getting-started.md](../getting-started.md).
+
+**Reference:** [agent-runner.md](../reference/agent-runner.md).
+
+---
+
+## 2. Multi-agent teams
+
+Teams wrap multiple `AgentConfig` members. The **pattern** decides how work flows between them.
+
+### Supervisor (LLM picks the next agent)
+
+**What it does:** The lead agent gets `delegate_to_{member}` tools. The LLM chooses which member to call and when.
+
+**When to use it:** Dynamic routing — the right specialist depends on the user's question.
+
+```yaml
+groups:
+  research_team:
+    pattern: supervisor
+    members: [supervisor, researcher, analyst]
+```
+
+**Example:** [research_team.yaml](../../examples/orchestration/research_team.yaml).
+
+### Pipeline (fixed order)
+
+**What it does:** Members run one after another. Member N+1 receives member N's **`finalResponse` string** as its input — not the full chat log. With `context_sharing: shared` on the group, **`RunContext.state`** is also merged forward after each step.
+
+**When to use it:** Predictable workflows (research → analyze → summarize).
+
+```yaml
+groups:
+  analysis_pipeline:
+    pattern: pipeline
+    members: [researcher, analyst, writer]
+```
+
+**Example:** Nested groups in [research_team.yaml](../../examples/orchestration/research_team.yaml).
+
+### Parallel (same input, combine outputs)
+
+**What it does:** Every member runs on the same `userMessage` concurrently. Results are merged per `aggregation_strategy` (`concat`, `first_complete`, or `vote`).
+
+**When to use it:** Multiple independent opinions on one question (for example two reviewers).
+
+```yaml
+groups:
+  review_panel:
+    pattern: parallel
+    aggregation_strategy: concat
+    members: [reviewer_a, reviewer_b]
+```
+
+**Reference:** [manifest-schema.md](../reference/manifest-schema.md).
+
+Supported group patterns: `supervisor`, `pipeline`, `parallel`.
+
+---
+
+## 3. Cascaded voice (STT → LLM → TTS)
+
+**What it does:** Modular stages — voice activity detection (VAD) → speech-to-text (STT) → text agent loop → text-to-speech (TTS).
+
+**In TypeScript:** stages are **mock STT/TTS** and **energy VAD** unless you later add a gRPC client. Audio can stream out as the reply is synthesized.
+
+**When to use GPU engines:** run the [Python Voice Lab](https://github.com/gowrav-vishwakarma/nexus-enterprise-agent) and point `servers:` at those processes. See [model-servers.md](model-servers.md).
+
+**Manifest (local mocks):**
+
+```yaml
+modality: voice_cascaded
+stt: { provider: mock }
+tts: { provider: mock }
+vad: { provider: energy, silence_ms: 600 }
+duplex: full   # or half for IVR
+```
+
+**Manifest (Python gRPC labels — for when a client exists):**
+
+```yaml
+servers:
+  indic_stt: { kind: stt, engine: conformer, port: 50051 }
+  indic_tts: { kind: tts, engine: parler, port: 50052, sample_rate: 44100 }
+
+modality: voice_cascaded
+stt: { provider: nexus_server, server_ref: indic_stt, language: hi }
+tts: { provider: nexus_server, server_ref: indic_tts, sample_rate: 44100 }
+vad: { provider: energy }
+duplex: full
+```
+
+```ts
+import { RealtimeRuntime } from "nexus-enterprise-agent/realtime";
+
+const runtime = RealtimeRuntime.fromManifest(manifest, { runContext: ctx });
+const pipeline = runtime.buildPipeline("voice_local");
+
+for await (const ev of pipeline.processText("book a flight", "s1")) {
+  // ev.event_type: transcript_final, audio_out, ...
+}
+
+for await (const ev of pipeline.processAudioStream(frames, "s1")) {
+  // continuous mic; duplex: full enables barge-in when adapters support it
+}
+```
+
+| Method | Use case |
+|--------|----------|
+| `processText` | Text in, audio + text events out |
+| `processAudioStream` | Continuous mic stream |
+
+**Guides:** [voice-lab.md](voice-lab.md), [model-servers.md](model-servers.md).
+
+---
+
+## 4. Speech-to-speech (S2S)
+
+**What it does:** One realtime model takes audio in and returns audio out. Nexus still bridges your **tools** and **persona** to the model's function-calling layer when the adapter supports it.
+
+**When to use it:** Low-latency duplex conversation. This package ships a **mock** S2S adapter for tests.
+
+```yaml
+modality: voice_s2s
+s2s: { provider: mock }
+duplex: full
+```
+
+```ts
+import { SpeechToSpeechPipeline } from "nexus-enterprise-agent/realtime";
+
+const pipeline = new SpeechToSpeechPipeline(rtConfig, {
+  toolRegistry: registry,
+  runContext: ctx,
+});
+for await (const ev of pipeline.processAudioStream(audioFrames)) {
+  // ...
+}
+```
+
+---
+
+## 5. Voice team (responder + context agent)
+
+**What it does:** A **responder** speaks with the user. An optional **context_agent** silently looks up facts each turn and injects them into the responder's prompt.
+
+**When to use it:** Voice support where a fast talker needs a slower lookup agent behind the scenes.
+
+```yaml
+groups:
+  support_team:
+    pattern: voice_team
+    context_injection_var: live_context
+    members:
+      - { name: responder, role: responder }
+      - { name: context_agent, role: context_agent }
+```
+
+```ts
+const team = RealtimeRuntime.fromManifest(manifest, { runContext: ctx }).buildVoiceTeam(
+  "support_team",
+);
+```
+
+Voice-team YAML examples live in the Python repo. TypeScript can load the same shape when you copy the YAML.
+
+---
+
+## 6. Vision (images + text)
+
+**What it does:** `UserInput` carries images plus text. Channel adapters already build this from Telegram/WhatsApp photo payloads. There is no separate `VisionAgentRunner` class in this package — pass image-aware user content into the same `AgentRunner` / your HTTP handler.
+
+```ts
+import { UserInput } from "nexus-enterprise-agent/realtime";
+
+const input = UserInput.from_image_bytes(pngBytes, "What's in this photo?");
+```
+
+**When to use it:** Photo analysis, screenshot QA, or channel messages with image attachments.
+
+---
+
+## 7. Messaging channels
+
+**What it does:** A **channel adapter** (Telegram, WhatsApp) normalizes provider payloads to `UserInput`, runs your agent, and sends the reply back. Voice notes can be transcribed via STT if you pass an STT adapter.
+
+```ts
+import { AgentRunner } from "nexus-enterprise-agent";
+// ChannelRouter lives in the channels module (src/channels). This package does not ship a webhook server.
+
+const router = new ChannelRouter(
+  adapter,
+  (ctx) =>
+    new AgentRunner({
+      config,
+      toolRegistry: registry,
+      runContext: ctx,
+    }),
+  { stt },
+);
+
+const output = await router.handle(updatePayload);
+```
+
+**When to use it:** Bots on messaging platforms where each inbound message is one agent turn.
+
+This package does not ship a webhook server. Mount `router.handle()` on any HTTP route — [saas-example.md](saas-example.md).
+
+---
+
+## 8. Transports (voice I/O)
+
+Transports move audio between the client and a voice pipeline. Bind with `RealtimeSession`:
+
+```ts
+import { RealtimeSession, WebSocketTransport } from "nexus-enterprise-agent/realtime";
+
+const session = new RealtimeSession(pipeline, new WebSocketTransport(socket), "call-1");
+await session.runAudio();
+```
+
+| Transport | Use case |
+|-----------|----------|
+| `WebSocketTransport` | Browser or server WebSocket (PCM16) |
+| `InMemoryTransport` | Tests |
+
+GPU media servers connect via gRPC in **Python** — see [model-servers.md](model-servers.md).
+
+---
+
+## Full example index
+
+See [examples.md](../examples.md) for the complete table.
+
+## Next steps
+
+- [Runtime control](runtime-control.md) — take charge when tool results or tenant state change
+- [Getting started](../getting-started.md) — YAML orchestration quick path
+- [Voice Lab](voice-lab.md) — Python GPU lab + TypeScript mocks

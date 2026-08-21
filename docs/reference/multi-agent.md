@@ -1,0 +1,133 @@
+# Multi-agent teams
+
+**Who this is for:** Developers running more than one agent in supervisor or pipeline patterns.
+
+## Key terms
+
+- **Group** — `AgentGroupConfig` or a `groups` entry in YAML; wires members and pattern.
+- **Supervisor** — One agent delegates work to others via `delegate_to_*` tools.
+- **Pipeline** — Agents run in order; each gets the previous agent's final text as input.
+- **Member** — One agent inside a group.
+
+## Patterns
+
+| Pattern | Status | What happens |
+|---------|--------|--------------|
+| `supervisor` | Implemented | Lead agent delegates to members |
+| `pipeline` | Implemented | Members run sequentially |
+| `parallel` | Implemented | All members run on the same input; outputs merged per `aggregation_strategy` (`concat`, `first_complete`, `vote`) |
+
+## AgentGroupConfig
+
+Groups do **not** have an `llm` field. Each member's `AgentConfig` has its own LLM.
+
+| Name | Required? | Default | What it does |
+|------|-----------|---------|--------------|
+| `name` | Yes | — | Group name |
+| `pattern` | No | `supervisor` | Orchestration pattern |
+| `members` | No | `[]` | Agents or nested groups |
+| `session_id_prefix` | No | `""` | Prefix for member chat ids |
+| `supervisor` | No | `null` | Lead member for `supervisor` pattern (else name heuristic) |
+| `persist_members` | No | `false` | When `false`, members run with `isSubagent` and skip durable chat persistence |
+| `context_sharing` | No | `inherit` | `isolated`, `inherit`, or `shared` (write-back to group after each member) |
+| `max_turns` | No | `20` | Total turns across members (**enforced** by the orchestrator) |
+| `aggregation_strategy` | No | `supervisor` | For `parallel`: `concat`, `first_complete`, or `vote` |
+
+## Member chat ids
+
+At orchestrator init: `{session_id_prefix}{group_session_id}_{member.name}`
+
+Example: `team_group-1_researcher`, `team_group-1_analyst`.
+
+Set `RunContext.sessionId` **before** creating `AgentOrchestrator` or `OrchestrationRuntime`.
+
+Pass `eventEmitter` on `AgentOrchestrator` (or on `OrchestrationRuntime.fromManifest()`) to fan the same observability hook out to every member `AgentRunner` and nested group. You do not attach emitters to members yourself when you use the orchestrator.
+
+Member runners get `RunContext.isSubagent = true` by default (`persist_members: false`), so their chat history is not written to storage. Set `persist_members: true` on the group to keep separate member session files.
+
+Supervisor groups auto-register `supervisor.delegate_to_{member}` tools and **auto-grant** them to the lead agent even when the lead uses a narrow `toolset`. Optional YAML: `supervisor: lead_agent_name`.
+
+```ts
+import { AgentOrchestrator, createRunContext } from "nexus-enterprise-agent";
+
+const ctx = createRunContext({
+  tenantId: "acme",
+  userId: "u-1",
+  sessionId: "group-1",
+});
+
+const orchestrator = new AgentOrchestrator({
+  config: groupConfig,
+  toolRegistry: registry,
+  runContext: ctx,
+});
+const result = await orchestrator.run({ userMessage: "Analyze Q4 revenue" });
+```
+
+## Parallel aggregation
+
+| Strategy | Extra LLM call? | What it does |
+|----------|-----------------|--------------|
+| `concat` | No | Labelled join of every member's `finalResponse` |
+| `first_complete` | No | First finished member wins |
+| `vote` | No | Plurality of identical `finalResponse` strings |
+| `consensus` | Yes (held) | Would ask another model to merge replies. **Not shipped** |
+
+```yaml
+groups:
+  review_panel:
+    pattern: parallel
+    aggregation_strategy: vote
+    members: [reviewer_a, reviewer_b, reviewer_c]
+```
+
+## Pipeline handoff
+
+Member N+1 receives member N's **`finalResponse` string** as its `userMessage` — not the full chat log.
+
+With `context_sharing: shared`, members also share **`RunContext.state`** and **`RunContext.metadata`**: each member run syncs down from the group before it starts and merges back after it finishes, so the next member (and the system prompt) can see structured checkpoint data — not only the previous agent's text reply.
+
+## Context sharing (`context_sharing`)
+
+| Mode | Behavior |
+|------|----------|
+| `isolated` | Members get identity + services only; empty `metadata`/`state` |
+| `inherit` (default) | Group `metadata`/`state` copied to each member before it runs; member writes stay local |
+| `shared` | Same as `inherit`, plus member bags merge back into the group after each run (pipeline / supervisor) |
+
+Sync runs at **delegation time**, not only at orchestrator construction, so a supervisor can update group state and specialists see it on the next `delegate_to_*` call.
+
+Members receive a `metadata.nexus_delegation` breadcrumb (group name, member name, optional `delegated_by`). The default system prompt template includes a short **Delegated task** section when that key is present.
+
+**Supervisor state handoff:** the lead agent's tools call `ctx.setState(...)` on the member `RunContext` (same object the runner uses). Before each delegate, the orchestrator merges the supervisor's live state into the group context and syncs down to the specialist.
+
+**Parallel + `shared`:** members receive a down-sync before they run, but write-back is skipped (concurrent races). Use pipeline or supervisor for shared mutable state.
+
+## Nested groups (YAML)
+
+```yaml
+groups:
+  analysis_pipeline:
+    pattern: pipeline
+    members: [researcher, analyst]
+  research_team:
+    pattern: supervisor
+    members: [supervisor, analysis_pipeline]
+```
+
+## What is shared vs not
+
+| Kind | Shared by default? |
+|------|-------------------|
+| `tenantId`, `userId`, `companyId`, `auth`, `channel`, services | Yes (via `RunContext.deriveChild`) |
+| `metadata`, `state` | Yes when `context_sharing` is `inherit` or `shared` (sync at run time) |
+| Tool registry | Only if you pass the same instance |
+| Chat history | No — separate JSON per member (unless `persist_members: true`) |
+| LLM config | No — per member |
+
+## Next steps
+
+- [Getting started](../getting-started.md)
+- [Storage](storage.md)
+- [Manifest schema](manifest-schema.md)
+- [Runner](agent-runner.md)
