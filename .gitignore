@@ -8,3 +8,5 @@ tenants/
 data/
 .nexus/
 *.tsbuildinfo
+.npmrc
+*.tgz

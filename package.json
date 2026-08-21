@@ -7,7 +7,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "nexus": "./dist/cli/main.js"
+    "nexus": "dist/cli/main.js"
   },
   "exports": {
     ".": {
@@ -33,7 +33,8 @@
   ],
   "scripts": {
     "build": "tsup",
-    "prepare": "npm run build",
+    "prepare": "node --input-type=module -e \"import { existsSync } from 'node:fs'; import { execSync } from 'node:child_process'; if (existsSync('src/index.ts')) execSync('npm run build', { stdio: 'inherit' });\"",
+    "prepublishOnly": "npm run build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

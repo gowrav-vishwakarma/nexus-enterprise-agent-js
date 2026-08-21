@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /** Nexus command-line interface. */
 
 import { existsSync } from "node:fs";
