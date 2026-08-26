@@ -26,6 +26,7 @@ import {
   type ToolCallRequest,
 } from "../response.js";
 import { formatOpenaiTools } from "../tool-format.js";
+import { ThinkTagSplitter, splitThinkTags } from "../think-tags.js";
 
 type ChatOptions = {
   tools?: Array<Record<string, unknown>> | null;
@@ -44,6 +45,14 @@ function readReasoning(value: unknown): string | null {
     return value;
   }
   return null;
+}
+
+function partText(part: unknown): string {
+  if (!part || typeof part !== "object") return "";
+  const rec = part as { text?: unknown; delta?: unknown };
+  if (typeof rec.text === "string") return rec.text;
+  if (typeof rec.delta === "string") return rec.delta;
+  return "";
 }
 
 function toTokenUsage(usage: {
@@ -353,7 +362,7 @@ export function buildCallSettings(config: LLMProviderConfig, options: ChatOption
   }
   Object.assign(extras, asRecord(defaults.extra_body), asRecord(defaults.extraBody));
   const reasoning = defaults.reasoningEffort ?? defaults.reasoning_effort;
-  if (reasoning != null) extras.reasoningEffort = reasoning;
+  if (typeof reasoning === "string" && reasoning.trim()) extras.reasoningEffort = reasoning;
 
   if (config.enableThinking != null) {
     extras.chat_template_kwargs = {
@@ -427,14 +436,16 @@ export class VercelAdapter extends BaseLLMAdapter {
         toolChoice: tools ? "auto" : undefined,
       });
 
+      const tagged = splitThinkTags(result.text || "");
       const reasoning =
         readReasoning(result.reasoningText) ??
         (Array.isArray(result.reasoning)
           ? result.reasoning.map((part) => part.text).join("")
-          : null);
+          : null) ??
+        (tagged.reasoning || null);
 
       return createLLMResponse({
-        content: result.text || null,
+        content: tagged.content || null,
         reasoning,
         toolCalls: parseToolCallsFromResult(result.toolCalls),
         usage: toTokenUsage(result.usage),
@@ -462,12 +473,18 @@ export class VercelAdapter extends BaseLLMAdapter {
     });
 
     const toolAcc = new Map<number, { id?: string; name: string; arguments: string }>();
+    const think = new ThinkTagSplitter();
 
     for await (const part of result.fullStream) {
-      if (part.type === "text-delta") {
-        yield createLLMStreamChunk({ content: part.text });
-      } else if (part.type === "reasoning-delta") {
-        yield createLLMStreamChunk({ reasoning: part.text });
+      const kind = String(part.type);
+      if (kind === "text-delta") {
+        for (const piece of think.push(partText(part))) {
+          if (piece.reasoning) yield createLLMStreamChunk({ reasoning: piece.reasoning });
+          if (piece.content) yield createLLMStreamChunk({ content: piece.content });
+        }
+      } else if (kind === "reasoning-delta" || kind === "reasoning") {
+        const text = partText(part);
+        if (text) yield createLLMStreamChunk({ reasoning: text });
       } else if (part.type === "tool-call") {
         const index = toolAcc.size;
         toolAcc.set(index, {
@@ -505,6 +522,10 @@ export class VercelAdapter extends BaseLLMAdapter {
           ],
         });
       } else if (part.type === "finish") {
+        for (const piece of think.end()) {
+          if (piece.reasoning) yield createLLMStreamChunk({ reasoning: piece.reasoning });
+          if (piece.content) yield createLLMStreamChunk({ content: piece.content });
+        }
         yield createLLMStreamChunk({
           finishReason: part.finishReason,
           usage: toTokenUsage(part.totalUsage),

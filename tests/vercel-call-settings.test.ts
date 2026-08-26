@@ -40,6 +40,16 @@ describe("buildCallSettings", () => {
     });
   });
 
+  it("omits empty reasoning_effort so the model default is used", () => {
+    const settings = buildCallSettings(
+      config({
+        provider: "litellm",
+        defaultParams: { reasoning_effort: "" },
+      }),
+    );
+    expect(settings.providerOptions).toBeUndefined();
+  });
+
   it("restores temperature from default_params", () => {
     const settings = buildCallSettings(
       config({

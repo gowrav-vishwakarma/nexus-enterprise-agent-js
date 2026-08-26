@@ -105,7 +105,7 @@ default_params:
       enable_thinking: true
 ```
 
-becomes `temperature` at the top level and `providerOptions.litellm.reasoningEffort` plus the extra-body fields. You may also set `default_params.providerOptions` yourself; those keys win if both are present.
+becomes `temperature` at the top level and `providerOptions.litellm.reasoningEffort` plus the extra-body fields. You may also set `default_params.providerOptions` yourself; those keys win if both are present. Leave `reasoning_effort` unset or empty to omit it — many OpenAI-compatible models reject the field.
 
 **Thinking follows your model's own setting by default.** Nexus does not turn it on or off behind your back. When a model does think, Nexus streams it as `reasoning` events, separate from the answer.
 

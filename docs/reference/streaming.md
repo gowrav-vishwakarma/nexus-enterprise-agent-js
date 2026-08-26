@@ -106,7 +106,7 @@ The full text is saved on the turn as `TurnRecord.reasoning`. It is deliberately
 Two things to check if you see no `reasoning` events:
 
 - **The model must be asked to think.** Use `LLMProviderConfig.enable_thinking: true`, or the provider's own switch (`reasoning_effort`, `thinking`) via `default_params` (mapped to AI SDK `providerOptions`). Set `enable_thinking: false` for voice. See [agent-config.md](agent-config.md#reasoning-thinking).
-- **The server must parse it.** A self-hosted vLLM or SGLang deployment only fills reasoning when started with a matching `--reasoning-parser`. Without it the model's `<think>` block stays inside `content`.
+- **The server must parse it.** A self-hosted vLLM or SGLang deployment only fills reasoning when started with a matching `--reasoning-parser`. Without it the model's `<think>` block stays inside `content`. Nexus then splits `<think>…</think>` out of `content` and emits those pieces as `reasoning` events.
 
 ### Pause / resume (summary)
 
