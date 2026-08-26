@@ -81,13 +81,35 @@ npm install @ai-sdk/amazon-bedrock
 
 ## Reasoning models, `extra_body`, and headers
 
-Any key under `default_params` is passed through on every call. This is how you tune reasoning ("thinking") models and pass engine-specific switches or HTTP headers.
+The Vercel AI SDK accepts a few **top-level** call settings (`temperature`, `max_tokens` as `maxOutputTokens`, `topP`, and so on) plus **`providerOptions`**. A **provider option** is an extra field the vendor API accepts that the SDK does not list as a shared setting.
+
+Nexus copies known sampling keys from `default_params` onto the call. LiteLLM-style keys (`reasoning_effort`, `extra_body`, and any leftover object) go under `providerOptions.<providerName>`:
+
+| `provider` | `providerOptions` key |
+|------------|------------------------|
+| `openai`, `azure_openai` | `openai` |
+| `anthropic` | `anthropic` |
+| `litellm` | `litellm` |
+| `ollama` | `ollama` |
+| `openrouter` | `openrouter` |
+| `custom` | `custom` |
+
+You can still write LiteLLM names. This:
+
+```yaml
+default_params:
+  temperature: 0.3
+  reasoning_effort: low
+  extra_body:
+    chat_template_kwargs:
+      enable_thinking: true
+```
+
+becomes `temperature` at the top level and `providerOptions.litellm.reasoningEffort` plus the extra-body fields. You may also set `default_params.providerOptions` yourself; those keys win if both are present.
 
 **Thinking follows your model's own setting by default.** Nexus does not turn it on or off behind your back. When a model does think, Nexus streams it as `reasoning` events, separate from the answer.
 
-**Turn it off for voice.** Reasoning models otherwise spend the first few seconds emitting a `<think>…</think>` block before any speakable text. Set `enable_thinking: false` on the voice agent's LLM config. Nexus maps that onto the OpenAI-compatible `extra_body.chat_template_kwargs.enable_thinking` path.
-
-Anything you set in `default_params.extra_body` wins over `enable_thinking`:
+**Turn it off for voice.** Reasoning models otherwise spend the first few seconds emitting a `<think>…</think>` block before any speakable text. Set `enable_thinking: false` on the voice agent's LLM config. Nexus writes that into `providerOptions.<providerName>.chat_template_kwargs.enable_thinking`.
 
 ```yaml
 defaults:

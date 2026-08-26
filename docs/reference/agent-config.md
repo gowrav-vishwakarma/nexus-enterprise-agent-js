@@ -99,8 +99,8 @@ All providers route through the **Vercel AI SDK** (`generateText` / `streamText`
 | `max_retries` | No | `3` | Retry count on failure |
 | `retry_delay` | No | `1.0` | Seconds between retries |
 | `extra_headers` | No | `{}` | Extra HTTP headers |
-| `default_params` | No | `{}` | Extra params sent to the provider (`max_tokens`, `temperature`, `reasoning_effort`, …) |
-| `enable_thinking` | No | `null` | Force a model's reasoning on (`true`) or off (`false`). `null` leaves the deployment's own setting alone. |
+| `default_params` | No | `{}` | Call settings. Known AI SDK keys (`temperature`, `max_tokens`, `topP`, …) stay top-level. `reasoning_effort`, `extra_body`, and other leftovers go under `providerOptions.<providerName>` (see [llm-vercel-ai.md](../guides/llm-vercel-ai.md)). |
+| `enable_thinking` | No | `null` | Force a model's reasoning on (`true`) or off (`false`). `null` leaves the deployment's own setting alone. Written into `providerOptions.<providerName>.chat_template_kwargs.enable_thinking`. |
 
 `base_url` overrides the endpoint; it does **not** choose the adapter. Set `provider` explicitly.
 

@@ -254,39 +254,122 @@ function mapLegacyProvider(provider: ProviderType): ProviderType {
   return provider;
 }
 
-function buildCallSettings(config: LLMProviderConfig, options: ChatOptions) {
-  const settings: Record<string, unknown> = {
-    ...config.defaultParams,
-    ...options,
-  };
-  delete settings.tools;
-  delete settings.temperature;
-  delete settings.maxTokens;
-  delete settings.stopSequences;
+/** AI SDK `providerOptions` key for this Nexus provider. */
+export function sdkProviderName(provider: ProviderType): string {
+  if (provider === "azure_openai") return "openai";
+  if (provider === "gemini") return "google";
+  return provider;
+}
 
-  if (options.temperature != null) {
-    settings.temperature = options.temperature;
+function asRecord(value: unknown): Record<string, unknown> {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return { ...(value as Record<string, unknown>) };
   }
+  return {};
+}
+
+const RESERVED_DEFAULT_KEYS = new Set([
+  "temperature",
+  "maxTokens",
+  "max_tokens",
+  "maxOutputTokens",
+  "stopSequences",
+  "stop",
+  "tools",
+  "topP",
+  "top_p",
+  "topK",
+  "top_k",
+  "presencePenalty",
+  "presence_penalty",
+  "frequencyPenalty",
+  "frequency_penalty",
+  "seed",
+  "maxRetries",
+  "timeout",
+  "headers",
+  "abortSignal",
+  "providerOptions",
+  "extraBody",
+  "extra_body",
+  "reasoningEffort",
+  "reasoning_effort",
+]);
+
+/**
+ * Map `default_params` onto AI SDK call settings.
+ * Known sampling keys stay top-level. LiteLLM-style extras
+ * (`reasoning_effort`, `extra_body`, leftover keys) go under
+ * `providerOptions[sdkName]`.
+ */
+export function buildCallSettings(config: LLMProviderConfig, options: ChatOptions = {}) {
+  const defaults = { ...(config.defaultParams ?? config.default_params ?? {}) };
+  const settings: Record<string, unknown> = {};
+
+  const temperature = options.temperature ?? defaults.temperature;
+  if (temperature != null) settings.temperature = temperature;
+
   if (options.maxTokens != null) {
     settings.maxOutputTokens = options.maxTokens;
-  } else if (config.defaultParams?.max_tokens != null) {
-    settings.maxOutputTokens = config.defaultParams.max_tokens;
-  }
-  if (options.stopSequences?.length) {
-    settings.stopSequences = options.stopSequences;
+  } else if (defaults.max_tokens != null) {
+    settings.maxOutputTokens = defaults.max_tokens;
+  } else if (defaults.maxOutputTokens != null) {
+    settings.maxOutputTokens = defaults.maxOutputTokens;
   }
 
+  if (options.stopSequences?.length) {
+    settings.stopSequences = options.stopSequences;
+  } else if (Array.isArray(defaults.stopSequences)) {
+    settings.stopSequences = defaults.stopSequences;
+  } else if (Array.isArray(defaults.stop)) {
+    settings.stopSequences = defaults.stop;
+  }
+
+  const topLevelAliases: Array<[string, string]> = [
+    ["topP", "topP"],
+    ["top_p", "topP"],
+    ["topK", "topK"],
+    ["top_k", "topK"],
+    ["presencePenalty", "presencePenalty"],
+    ["presence_penalty", "presencePenalty"],
+    ["frequencyPenalty", "frequencyPenalty"],
+    ["frequency_penalty", "frequencyPenalty"],
+    ["seed", "seed"],
+    ["maxRetries", "maxRetries"],
+    ["timeout", "timeout"],
+    ["headers", "headers"],
+  ];
+  for (const [from, to] of topLevelAliases) {
+    if (defaults[from] != null && settings[to] == null) {
+      settings[to] = defaults[from];
+    }
+  }
+
+  const extras: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(defaults)) {
+    if (!RESERVED_DEFAULT_KEYS.has(key) && value !== undefined) {
+      extras[key] = value;
+    }
+  }
+  Object.assign(extras, asRecord(defaults.extra_body), asRecord(defaults.extraBody));
+  const reasoning = defaults.reasoningEffort ?? defaults.reasoning_effort;
+  if (reasoning != null) extras.reasoningEffort = reasoning;
+
   if (config.enableThinking != null) {
-    const extraBody = { ...(settings.extraBody as Record<string, unknown> | undefined) };
-    const chatTemplateKwargs = {
-      ...(extraBody.chat_template_kwargs as Record<string, unknown> | undefined),
+    extras.chat_template_kwargs = {
+      ...asRecord(extras.chat_template_kwargs),
       enable_thinking: config.enableThinking,
     };
-    extraBody.chat_template_kwargs = chatTemplateKwargs;
-    settings.providerOptions = {
-      ...(settings.providerOptions as Record<string, unknown> | undefined),
-      openaiCompatible: extraBody,
-    };
+  }
+
+  const sdkName = sdkProviderName(config.provider);
+  const existingPO = asRecord(defaults.providerOptions);
+  const existingBag = asRecord(existingPO[sdkName]);
+  const mergedBag = { ...extras, ...existingBag };
+  if (Object.keys(mergedBag).length) {
+    settings.providerOptions = { ...existingPO, [sdkName]: mergedBag };
+  } else if (Object.keys(existingPO).length) {
+    settings.providerOptions = existingPO;
   }
 
   return settings;
