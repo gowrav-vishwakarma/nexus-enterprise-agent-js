@@ -39,7 +39,14 @@ type LibsqlModule = {
 
 async function loadLibsql(): Promise<LibsqlModule> {
   try {
-    return (await import("@libsql/client")) as unknown as LibsqlModule;
+    const mod = (await import("@libsql/client")) as unknown as LibsqlModule & {
+      default?: LibsqlModule;
+    };
+    const createClient = mod.createClient ?? mod.default?.createClient;
+    if (!createClient) {
+      throw new Error("createClient export missing");
+    }
+    return { createClient };
   } catch {
     throw new Error(
       "@libsql/client is required for SQLiteStorageAdapter. " +

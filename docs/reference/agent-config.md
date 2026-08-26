@@ -85,7 +85,7 @@ In YAML orchestration, use `persona.prompt` + `prompt_args` instead of `system_p
 
 ## LLMProviderConfig
 
-All providers route through the **Vercel AI SDK** (`generateText` / `streamText`). Install the matching optional peer (`@ai-sdk/openai`, `@ai-sdk/anthropic`, …) for that provider. `litellm` and `custom` use `@ai-sdk/openai-compatible` against `base_url`.
+All providers route through the **Vercel AI SDK** (`generateText` / `streamText`). Install the matching optional peer (`@ai-sdk/openai`, `@ai-sdk/anthropic`, …) for that provider. `litellm` and `custom` use `@ai-sdk/openai-compatible` against `base_url`. The built system prompt is sent as the SDK `system` field (not as a message in `messages`).
 
 | Name | Required? | Default | What it does |
 |------|-----------|---------|--------------|

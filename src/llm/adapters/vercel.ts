@@ -65,15 +65,31 @@ function toTokenUsage(usage: {
   };
 }
 
+function toVercelPrompt(messages: Array<Record<string, unknown>>): {
+  system?: string;
+  messages: ModelMessage[];
+} {
+  const systemParts: string[] = [];
+  const rest: Array<Record<string, unknown>> = [];
+  for (const msg of messages) {
+    if (String(msg.role ?? "") === "system") {
+      const text = String(msg.content ?? "");
+      if (text.trim()) systemParts.push(text);
+      continue;
+    }
+    rest.push(msg);
+  }
+  return {
+    system: systemParts.length ? systemParts.join("\n\n") : undefined,
+    messages: convertOpenAiMessages(rest),
+  };
+}
+
 function convertOpenAiMessages(messages: Array<Record<string, unknown>>): ModelMessage[] {
   const converted: ModelMessage[] = [];
   for (const msg of messages) {
     const role = String(msg.role ?? "user");
     if (role === "system") {
-      converted.push({
-        role: "system",
-        content: String(msg.content ?? ""),
-      });
       continue;
     }
     if (role === "user") {
@@ -314,17 +330,18 @@ export class VercelAdapter extends BaseLLMAdapter {
     messages: Array<Record<string, unknown>>,
     options: ChatOptions = {},
   ): Promise<LLMResponse> {
-    const modelMessages = convertOpenAiMessages(messages);
+    const { system, messages: modelMessages } = toVercelPrompt(messages);
     const tools = convertTools(options.tools);
     const settings = buildCallSettings(this.config, options);
 
     return this.withRetry(async () => {
       const result = await generateText({
         model: this.model,
+        ...settings,
+        system,
         messages: modelMessages,
         tools,
         toolChoice: tools ? "auto" : undefined,
-        ...settings,
       });
 
       const reasoning =
@@ -348,16 +365,17 @@ export class VercelAdapter extends BaseLLMAdapter {
     messages: Array<Record<string, unknown>>,
     options: ChatOptions = {},
   ): AsyncIterable<LLMStreamChunk> {
-    const modelMessages = convertOpenAiMessages(messages);
+    const { system, messages: modelMessages } = toVercelPrompt(messages);
     const tools = convertTools(options.tools);
     const settings = buildCallSettings(this.config, options);
 
     const result = streamText({
       model: this.model,
+      ...settings,
+      system,
       messages: modelMessages,
       tools,
       toolChoice: tools ? "auto" : undefined,
-      ...settings,
     });
 
     const toolAcc = new Map<number, { id?: string; name: string; arguments: string }>();

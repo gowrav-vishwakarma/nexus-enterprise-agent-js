@@ -114,7 +114,7 @@ Set `codec_class` on `SessionStorageConfig` to an import path such as `myapp/cod
 |---------|-------|--------------|
 | `memory` | none (always available) | In-process only; lost when the process exits |
 | `file` | none (always available) | One `session.json` per chat under tenant/user folders |
-| `sqlite` | `@libsql/client` | One database file per user with one row per chat |
+| `sqlite` | `@libsql/client` | One database file per user with one row per chat. The published bundle does **not** inline this peer (native bindings break if bundled). The host app must install `@libsql/client`. |
 | `postgresql` | `postgres` (optional peer) | Planned; currently falls back to memory |
 | `redis` | `ioredis` (optional peer) | Planned; currently falls back to memory |
 | `custom` | your module | Your class via `custom_adapter_class` |

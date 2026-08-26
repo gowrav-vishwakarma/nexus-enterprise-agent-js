@@ -4,6 +4,8 @@
 
 Nexus TypeScript routes LLM calls through the **Vercel AI SDK** (`ai` plus provider packages). You host models however you like (vLLM, SGLang, Ollama, LiteLLM proxy, cloud APIs). Nexus only needs `provider`, `model`, `base_url`, and `api_key` on each agent's `llm` block.
 
+The persona system prompt is passed as the AI SDK `system` option, not as a `{ role: "system" }` message. That matches the SDK’s recommended (and safer) call shape.
+
 The Python package uses liteLLM for the same job. The config shape (`provider` + `base_url`) is the same idea; the transport here is Vercel AI.
 
 ## Key terms

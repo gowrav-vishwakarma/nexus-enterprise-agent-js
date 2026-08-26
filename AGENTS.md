@@ -65,3 +65,5 @@ Keep [README.md](README.md) short. It is a quick start only. Move depth to `docs
 ## Do not edit
 
 - Do not rewrite the Python [NEXUS_AGENT_PRD.md](https://github.com/gowrav-vishwakarma/nexus-enterprise-agent/blob/main/NEXUS_AGENT_PRD.md). Link to it.
+
+This has a porting of python package for same framework at /home/gowrav/Development/ankpal-erp/nexus-enterprise-agent so if you change anything here, make sure to update python package as well. and that should be backward compatible.

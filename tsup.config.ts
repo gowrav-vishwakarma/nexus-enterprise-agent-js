@@ -1,5 +1,8 @@
 import { defineConfig } from "tsup";
 
+/** Native addons must stay external — bundling them yields `undefined.default`. */
+const optionalPeers = ["@libsql/client", "libsql"];
+
 const shared = {
   format: ["esm"] as const,
   dts: true,
@@ -7,6 +10,7 @@ const shared = {
   splitting: false,
   treeshake: true,
   target: "node20" as const,
+  external: optionalPeers,
 };
 
 export default defineConfig([
