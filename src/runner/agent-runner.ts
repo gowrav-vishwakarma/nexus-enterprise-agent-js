@@ -35,7 +35,14 @@ import {
   nextTcIndex,
   pendingInteractionToJson,
 } from "../session/models.js";
-import type { CrossSessionMemoryStore } from "../memory/cross-session-store.js";
+import {
+  resolveCrossSessionNamespace,
+  type CrossSessionMemoryStore,
+} from "../memory/cross-session-store.js";
+import { MemoryCurator } from "../memory/curator.js";
+import { createMemoryPlugin } from "../memory/plugin.js";
+import type { MemoryProvider } from "../memory/provider.js";
+import { BuiltInSemanticMemoryProvider } from "../memory/providers/builtin-semantic.js";
 import { SessionManager } from "../session/manager.js";
 import { SessionScope } from "../session/scope.js";
 import { createRunContext, type RunContext } from "../tools/context.js";
@@ -133,7 +140,10 @@ export class AgentRunner {
   readonly ctxBuilder: ContextWindowBuilder;
   readonly hooks: RunnerHooks;
   readonly crossSessionMemoryStore: CrossSessionMemoryStore | null;
+  readonly memoryProvider: MemoryProvider | null;
+  readonly memoryCurator: MemoryCurator;
   readonly interceptor: ContextUpdateInterceptor;
+  readonly extraVars: Record<string, unknown> | null;
 
   private streamSeq = 0;
   private _cancelRequested = false;
@@ -150,6 +160,8 @@ export class AgentRunner {
     runContext?: RunContext;
     eventEmitter?: NexusEventEmitter;
     crossSessionMemoryStore?: CrossSessionMemoryStore | null;
+    memoryProvider?: MemoryProvider | null;
+    extraVars?: Record<string, unknown> | null;
     hooks?: RunnerHooks;
     onTurnEnd?: RunnerHooks["onTurnEnd"];
     llmAdapter?: LLMAdapter;
@@ -171,6 +183,10 @@ export class AgentRunner {
     this.runContext = options.runContext ?? createRunContext();
     this.eventEmitter = options.eventEmitter ?? new NexusEventEmitter();
     this.crossSessionMemoryStore = options.crossSessionMemoryStore ?? null;
+    this.memoryProvider =
+      options.memoryProvider ??
+      buildSyncMemoryProvider(this.config.memory, this.crossSessionMemoryStore, this.config.name);
+    this.extraVars = options.extraVars ?? null;
     this.hooks = options.hooks ?? {};
     if (options.onTurnEnd && !this.hooks.onTurnEnd) {
       this.hooks.onTurnEnd = options.onTurnEnd;
@@ -183,6 +199,31 @@ export class AgentRunner {
     this.llmProxy = options.llmProxy ?? new LLMProxy(this.config.llm, options.llmAdapter);
     this.ctxBuilder = new ContextWindowBuilder(this.eventEmitter);
     this.interceptor = new ContextUpdateInterceptor(this.eventEmitter);
+    this.memoryCurator = new MemoryCurator({
+      config: this.config.memory,
+      llmProxy: this.llmProxy,
+      sessionManager: this.sessionManager,
+      toolRegistry: this.toolRegistry,
+      runContext: this.runContext,
+      eventEmitter: this.eventEmitter,
+      crossSessionMemoryStore: this.crossSessionMemoryStore,
+      agentName: this.config.name,
+      memoryProvider: this.memoryProvider,
+    });
+    this.setupMemoryPlugin();
+  }
+
+  private setupMemoryPlugin(): void {
+    if (!this.config.memory?.enabled || !this.config.memory.expose_tools) return;
+    if (!this.crossSessionMemoryStore && !this.memoryProvider) return;
+    this.toolRegistry.registerPlugin(
+      createMemoryPlugin(
+        this.crossSessionMemoryStore,
+        this.config.memory,
+        this.config.name,
+        this.memoryProvider,
+      ),
+    );
   }
 
   cancel(): void {
@@ -354,24 +395,76 @@ export class AgentRunner {
     return this.bindLoopSession(session);
   }
 
+  private memoryStoreNamespace(storeName = "default"): string {
+    const base = resolveCrossSessionNamespace(
+      this.config.memory?.namespace ?? "",
+      this.config.name,
+    );
+    if (storeName && storeName !== "default") return `${base}:${storeName}`;
+    return base;
+  }
+
   private async loadUserMemory(): Promise<Record<string, string>> {
-    if (!this.config.memory?.enabled || !this.runContext.userId || !this.crossSessionMemoryStore) {
+    if (!this.config.memory?.enabled || !this.runContext.userId) {
       return {};
     }
+    if (this.memoryProvider) {
+      try {
+        return { ...(await this.memoryProvider.prefetch(this.runContext)) };
+      } catch (error) {
+        console.warn("AgentRunner: failed to prefetch memory via provider:", error);
+        return {};
+      }
+    }
+    if (!this.crossSessionMemoryStore) return {};
+    const companyId = this.runContext.companyId;
+    const stores = this.config.memory.stores ?? [];
     try {
-      const namespace =
-        this.config.memory.namespace?.trim() || this.config.name;
-      const record = await this.crossSessionMemoryStore.load(
-        this.runContext.tenantId,
-        this.runContext.userId,
-        namespace,
-        { companyId: this.runContext.companyId },
-      );
-      return record?.entityMemory ? { ...record.entityMemory } : {};
+      if (!stores.length) {
+        const record = await this.crossSessionMemoryStore.load(
+          this.runContext.tenantId,
+          this.runContext.userId,
+          this.memoryStoreNamespace("default"),
+          { companyId },
+        );
+        return record?.entityMemory ? { ...record.entityMemory } : {};
+      }
+      const always = stores.filter((s) => (s.inject ?? "always") === "always");
+      const multi = always.length > 1;
+      const merged: Record<string, string> = {};
+      for (const storeCfg of always) {
+        const record = await this.crossSessionMemoryStore.load(
+          this.runContext.tenantId,
+          this.runContext.userId,
+          this.memoryStoreNamespace(storeCfg.name),
+          { companyId },
+        );
+        if (!record?.entityMemory) continue;
+        const entries = trimToCharBudget(record.entityMemory, storeCfg.char_budget ?? 0);
+        for (const [key, value] of Object.entries(entries)) {
+          merged[multi ? `${storeCfg.name}/${key}` : key] = value;
+        }
+      }
+      return merged;
     } catch (error) {
       console.warn("AgentRunner: failed to load cross-session memory:", error);
       return {};
     }
+  }
+
+  private async maybeCurateAfterTurn(
+    session: AgentSession,
+    turnIndex: number,
+    atEnd = false,
+  ): Promise<AgentSession> {
+    if (!this.memoryCurator.shouldTrigger(turnIndex, atEnd)) return session;
+    await this.memoryCurator.curate(session, turnIndex);
+    const reloaded = await this.sessionManager.loadSession(session.sessionId, {
+      scope: this.sessionScope(session),
+    });
+    if (reloaded) session = reloaded;
+    this.userMemory = await this.loadUserMemory();
+    return this.bindLoopSession(session);
   }
 
   private async getOrCreateSession(sessionId?: string | null): Promise<AgentSession> {
@@ -403,6 +496,7 @@ export class AgentRunner {
         userMemory: this.userMemory,
         summaryText: session.summaryText,
         runContext: this.runContext,
+        extraVars: this.extraVars,
       });
     } catch (error) {
       console.warn("ContextWindowBuilder failed, using simple message list:", error);
@@ -879,6 +973,7 @@ export class AgentRunner {
             status: "completed",
           });
           session = await this.persistTurnWithState(session, finalTurn);
+          session = await this.maybeCurateAfterTurn(session, sessionTurnIndex);
 
           const decision = await this.invokeTurnEndHook(session, sessionTurnIndex, runTurnIndex, [], finalResp);
           if (decision?.action === "stop") {
@@ -1151,6 +1246,7 @@ export class AgentRunner {
         });
 
         session = await this.persistTurnWithState(session, turnRecord);
+        session = await this.maybeCurateAfterTurn(session, sessionTurnIndex);
         if (pausedThisTurn) {
           status = "paused";
           await this.maybeSaveSession(session);
@@ -1291,6 +1387,11 @@ export class AgentRunner {
           break;
         }
       }
+    }
+
+    if (status !== "error" && this.memoryCurator.active) {
+      const finalTurnIdx = Math.max(0, sessionTurnIndex - 1);
+      session = await this.maybeCurateAfterTurn(session, finalTurnIdx, true);
     }
 
     const snapshot = this.jsonSafeState({ ...(this.runContext.state ?? {}) });
@@ -1508,4 +1609,32 @@ export class AgentRunner {
       stream: false,
     });
   }
+}
+
+function buildSyncMemoryProvider(
+  memory: AgentConfig["memory"] | undefined,
+  store: CrossSessionMemoryStore | null,
+  agentName: string,
+): MemoryProvider | null {
+  if (!memory?.provider) return null;
+  if (memory.provider === "custom_class") return null;
+  if (memory.provider === "mem0" || memory.provider === "honcho") return null;
+  if (!store) return null;
+  return new BuiltInSemanticMemoryProvider(store, memory, { agentName });
+}
+
+function trimToCharBudget(
+  entities: Record<string, string>,
+  budget: number,
+): Record<string, string> {
+  if (!budget || budget <= 0) return entities;
+  const kept: Record<string, string> = {};
+  let used = 0;
+  for (const [key, value] of Object.entries(entities)) {
+    const line = `${key}: ${value}`;
+    if (used + line.length > budget && Object.keys(kept).length > 0) break;
+    kept[key] = value;
+    used += line.length;
+  }
+  return kept;
 }

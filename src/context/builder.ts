@@ -38,6 +38,7 @@ export interface BuildContextOptions {
   runContext?: RunContext | null;
   skillsCatalog?: string | null;
   explicitSkillsContent?: string | null;
+  extraVars?: Record<string, unknown> | null;
 }
 
 const FALLBACK_USER_MESSAGE = "Continue.";
@@ -255,6 +256,7 @@ export class ContextWindowBuilder {
       runContext = null,
       skillsCatalog = null,
       explicitSkillsContent = null,
+      extraVars = null,
     } = options;
 
     const rcsEnabled = agentConfig.rcs?.enabled ?? false;
@@ -285,6 +287,7 @@ export class ContextWindowBuilder {
       template,
       runContext,
       session,
+      extraVars,
     });
 
     systemContent = MemoryPromptInjector.inject(systemContent, facts, memoryCfg);

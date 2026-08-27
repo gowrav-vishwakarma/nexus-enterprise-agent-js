@@ -12,6 +12,9 @@ export {
   type CrossSessionMemoryRecord,
   type CrossSessionMemoryStore,
 } from "./cross-session-store.js";
+export { SQLiteCrossSessionMemoryStore } from "./stores/sqlite.js";
+export { PostgreSQLCrossSessionMemoryStore } from "./stores/postgresql.js";
+export { createMemoryPlugin, MemoryPlugin } from "./plugin.js";
 export {
   type MemoryProvider,
   type MemoryProviderProtocol,

@@ -229,7 +229,20 @@ export async function createAdapterFromConfig(
     const { loadCustomAdapter } = await import("../persistence/factory.js");
     return await loadCustomAdapter(config.custom_adapter_class, { ...adapterConfig, codec });
   }
-  if (adapterType === "postgresql" || adapterType === "redis") {
+  if (adapterType === "postgresql") {
+    const { PostgreSQLStorageAdapter } = await import("./adapters/postgresql.js");
+    return new PostgreSQLStorageAdapter({
+      dsn: adapterConfig.dsn as string | undefined,
+      schema: adapterConfig.schema as string | undefined,
+      db_schema: adapterConfig.db_schema as string | undefined,
+      schema_mode: adapterConfig.schema_mode as string | undefined,
+      sessions_table: adapterConfig.sessions_table as string | undefined,
+      table_prefix: adapterConfig.table_prefix as string | undefined,
+      auto_migrate: adapterConfig.auto_migrate as boolean | undefined,
+      codec,
+    });
+  }
+  if (adapterType === "redis") {
     console.warn(`Adapter type '${adapterType}' is not implemented yet; falling back to memory`);
     return new MemoryStorageAdapter();
   }

@@ -155,8 +155,12 @@ With YAML orchestration, `PersistenceFactory` can build a matching store from `S
 | Store | When to use |
 |-------|-------------|
 | `InMemoryCrossSessionMemoryStore` | Tests and single-process apps; lost on exit |
+| `SQLiteCrossSessionMemoryStore` | Durable facts. `tenant_scoped: true` (default) writes `{data_root}/{tenant}/users/{user}/memory.db`. `tenant_scoped: false` uses `db_path` (one file, e.g. per company). |
+| `PostgreSQLCrossSessionMemoryStore` | Shared Postgres. Same DSN / pool as the session adapter when `adapter: postgresql`. Requires the `postgres` package. |
 
-`SQLiteCrossSessionMemoryStore`, `PostgreSQLCrossSessionMemoryStore`, and `RedisCrossSessionMemoryStore` are currently **aliases** of the in-memory store. For durable facts in production, implement `CrossSessionMemoryStore` (`load`, `save`, `mergeEntities`) against your table, or wait for those adapters to land. Chat history SQLite is separate — see [storage.md](storage.md).
+`PersistenceFactory.fromStorageConfig` builds the matching store: `sqlite`/`file` → SQLite store, `postgresql` → Postgres store. Redis memory is not implemented yet. Chat history still uses a separate `StorageAdapter` — see [storage.md](storage.md).
+
+`AgentRunner` registers `memory.*` tools when `enabled && expose_tools`, runs `MemoryCurator` after turns / at end when those flags are on, and prefers `MemoryProvider.prefetch` when a provider is passed.
 
 ## Prompt injection
 

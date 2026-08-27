@@ -83,6 +83,7 @@ export class OrchestrationRuntime {
           toolRegistry,
           sessionManager: persistence.sessionManager,
           runContext: options.runContext,
+          crossSessionMemoryStore: persistence.crossSessionMemoryStore,
           eventEmitter: options.eventEmitter as ConstructorParameters<
             typeof AgentRunner
           >[0]["eventEmitter"],

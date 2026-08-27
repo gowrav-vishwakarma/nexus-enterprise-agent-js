@@ -76,7 +76,7 @@ export class MemoryPlugin {
       ctx.userId,
       ns,
       { [key]: value },
-      { maxEntities: this.config.max_entities ?? 100 },
+      { maxEntities: this.config.max_entities ?? 100, companyId: ctx.companyId },
     );
     return JSON.stringify({ ok: true, store: target, key });
   }
@@ -98,12 +98,14 @@ export class MemoryPlugin {
       return JSON.stringify({ ok: false, error: "memory store not configured" });
     }
     const ns = this.namespace(store);
-    const record = await this.store.load(ctx.tenantId, ctx.userId, ns);
+    const record = await this.store.load(ctx.tenantId, ctx.userId, ns, {
+      companyId: ctx.companyId,
+    });
     if (!record || !(key in record.entityMemory)) {
       return JSON.stringify({ ok: false, error: "key not found" });
     }
     delete record.entityMemory[key];
-    await this.store.save(record);
+    await this.store.save(record, { companyId: ctx.companyId });
     return JSON.stringify({ ok: true, store, key });
   }
 
@@ -134,6 +136,7 @@ export class MemoryPlugin {
       ctx.tenantId,
       ctx.userId,
       this.namespace(store),
+      { companyId: ctx.companyId },
     );
     const entries = record ? { ...record.entityMemory } : {};
     return JSON.stringify({ ok: true, store, entries });
@@ -163,6 +166,7 @@ export class MemoryPlugin {
       ctx.tenantId,
       ctx.userId,
       this.namespace(store),
+      { companyId: ctx.companyId },
     );
     if (!record) {
       return JSON.stringify({ ok: true, matches: [] });
@@ -224,6 +228,7 @@ export class HITLMemoryPlugin extends MemoryPlugin {
       ctx.tenantId,
       ctx.userId,
       this.namespace(store),
+      { companyId: ctx.companyId },
     );
     return record ? { ...record.entityMemory } : {};
   }
@@ -240,7 +245,7 @@ export class HITLMemoryPlugin extends MemoryPlugin {
       ctx.userId,
       this.namespace(store),
       { [key]: value },
-      { maxEntities: this.config.max_entities ?? 100 },
+      { maxEntities: this.config.max_entities ?? 100, companyId: ctx.companyId },
     );
   }
 
@@ -254,10 +259,11 @@ export class HITLMemoryPlugin extends MemoryPlugin {
       ctx.tenantId,
       ctx.userId,
       this.namespace(store),
+      { companyId: ctx.companyId },
     );
     if (!record || !(key in record.entityMemory)) return;
     delete record.entityMemory[key];
-    await this.store.save(record);
+    await this.store.save(record, { companyId: ctx.companyId });
   }
 }
 

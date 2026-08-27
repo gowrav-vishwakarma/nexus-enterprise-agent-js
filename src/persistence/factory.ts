@@ -28,18 +28,38 @@ export class PersistenceFactory {
 
   static async createCrossSessionStore(
     config: SessionStorageConfig,
-    _opts: { sessionAdapter?: StorageAdapter | null } = {},
+    opts: { sessionAdapter?: StorageAdapter | null } = {},
   ): Promise<CrossSessionMemoryStore> {
     const cfg = { ...(config.adapter_config ?? {}) };
     if (config.custom_memory_adapter_class) {
       return loadCustomMemoryStore(config.custom_memory_adapter_class, cfg);
     }
     const adapterType = config.adapter || "memory";
-    if (adapterType !== "memory") {
-      console.warn(
-        `Cross-session store for adapter '${adapterType}' is not implemented yet; using in-memory store`,
-      );
+    if (adapterType === "memory") {
+      return new InMemoryCrossSessionMemoryStore();
     }
+    if (adapterType === "file" || adapterType === "sqlite") {
+      const { SQLiteCrossSessionMemoryStore } = await import("../memory/stores/sqlite.js");
+      return new SQLiteCrossSessionMemoryStore({
+        data_root: cfg.data_root as string | undefined,
+        db_path: cfg.db_path as string | undefined,
+        tenant_scoped: cfg.tenant_scoped as boolean | undefined,
+      });
+    }
+    if (adapterType === "postgresql") {
+      const { PostgreSQLCrossSessionMemoryStore } = await import(
+        "../memory/stores/postgresql.js"
+      );
+      const sessionAdapter = opts.sessionAdapter as { pool?: unknown; dsn?: string } | null;
+      return new PostgreSQLCrossSessionMemoryStore({
+        ...cfg,
+        dsn: (cfg.dsn as string | undefined) ?? sessionAdapter?.dsn,
+        pool: sessionAdapter?.pool as never,
+      });
+    }
+    console.warn(
+      `Cross-session store for adapter '${adapterType}' is not implemented yet; using in-memory store`,
+    );
     return new InMemoryCrossSessionMemoryStore();
   }
 

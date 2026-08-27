@@ -67,13 +67,13 @@ export {
 } from "./memory/curator.js";
 export {
   InMemoryCrossSessionMemoryStore,
-  InMemoryCrossSessionMemoryStore as SQLiteCrossSessionMemoryStore,
-  InMemoryCrossSessionMemoryStore as PostgreSQLCrossSessionMemoryStore,
-  InMemoryCrossSessionMemoryStore as RedisCrossSessionMemoryStore,
   createCrossSessionMemoryRecord,
   type CrossSessionMemoryRecord,
   type CrossSessionMemoryStore,
 } from "./memory/cross-session-store.js";
+export { SQLiteCrossSessionMemoryStore } from "./memory/stores/sqlite.js";
+export { PostgreSQLCrossSessionMemoryStore } from "./memory/stores/postgresql.js";
+export { createMemoryPlugin, MemoryPlugin } from "./memory/plugin.js";
 export { type MemoryProvider } from "./memory/provider.js";
 export { BuiltInSemanticMemoryProvider } from "./memory/providers/builtin-semantic.js";
 

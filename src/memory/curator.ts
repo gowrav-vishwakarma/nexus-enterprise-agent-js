@@ -75,15 +75,16 @@ export interface AgentSessionLike {
   sessionId: string;
   agentId?: string;
   turns: Array<{
-    userMessage?: string;
-    llmMessages?: Array<{ role?: string; content?: string }>;
+    userMessage?: string | null;
+    llmMessages?: Array<{ role?: string; content?: string | null }>;
   }>;
 }
 
 export interface LLMProxyLike {
-  chat(opts: { messages: Array<{ role: string; content: string }> }): Promise<{
-    content?: string | null;
-  }>;
+  chat(
+    messages: Array<Record<string, unknown>>,
+    options?: Record<string, unknown>,
+  ): Promise<{ content?: string | null }>;
 }
 
 export class MemoryCurator {
@@ -188,6 +189,7 @@ export class MemoryCurator {
         ctx.tenantId,
         ctx.userId,
         namespace,
+        { companyId: ctx.companyId },
       );
       return record?.entityMemory ? { ...record.entityMemory } : {};
     } catch {
@@ -221,7 +223,7 @@ export class MemoryCurator {
           ctx.userId,
           namespace,
           update.entities,
-          { maxEntities: this.config.max_entities ?? 100 },
+          { maxEntities: this.config.max_entities ?? 100, companyId: ctx.companyId },
         );
         entityCount = Object.keys(record.entityMemory).length;
       } else {
@@ -270,9 +272,7 @@ export class MemoryCurator {
     const prompt = getCuratorPrompt(this.config)
       .replace("{existing_entities}", JSON.stringify(existingEntities))
       .replace("{conversation}", conversation);
-    const response = await this.llmProxy.chat({
-      messages: [{ role: "user", content: prompt }],
-    });
+    const response = await this.llmProxy.chat([{ role: "user", content: prompt }]);
     return response.content ?? "";
   }
 
