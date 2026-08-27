@@ -388,8 +388,10 @@ export class ToolRegistry {
         paramName === "arguments"
       ) {
         positional.push(args);
-      } else if (paramName in args) {
-        positional.push(args[paramName]);
+      } else {
+        // Always push, so an omitted optional argument cannot shift the
+        // parameters that follow it (notably a trailing run context).
+        positional.push(paramName in args ? args[paramName] : undefined);
       }
     }
 

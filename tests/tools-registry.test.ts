@@ -72,6 +72,24 @@ describe("ToolRegistry", () => {
     expect(res).toBe("test_session_xyz");
   });
 
+  it("keeps a trailing ctx aligned when an optional argument is omitted", async () => {
+    const registry = new ToolRegistry();
+    registry.registerTool(
+      defineTool(
+        (key: string, store: string | undefined, ctx?: { sessionId?: string | null }) =>
+          `${key}:${store ?? "default"}:${ctx?.sessionId ?? "no-session"}`,
+        { name: "scoped_write" },
+      ),
+    );
+    const rc = createRunContext({ sessionId: "s1" });
+    expect(await registry.execute("global", "scoped_write", { key: "k" }, rc)).toBe(
+      "k:default:s1",
+    );
+    expect(
+      await registry.execute("global", "scoped_write", { key: "k", store: "notes" }, rc),
+    ).toBe("k:notes:s1");
+  });
+
   it("injects RCS schema when enabled", () => {
     const registry = new ToolRegistry();
     registry.registerTool(addNumbers);
