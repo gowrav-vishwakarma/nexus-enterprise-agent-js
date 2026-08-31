@@ -163,7 +163,7 @@ Assistant turns persisted to the session are normalized with `buildAssistantLlmM
 
 OpenAI tolerates two assistant messages in a row, but most other providers reject it. Two rules keep replayed history safe:
 
-1. Every tool call always renders a `tool` message, so an assistant message carrying `tool_calls` is always followed by the results answering it. RCS summarizes a result but never removes the step — see [RCS](agent-config.md#runtimecontextsummarizerconfig-rcs).
+1. Every tool call always renders a `tool` message, so an assistant message carrying `tool_calls` is always followed by the results answering it. Object returns are JSON-serialized (`toolResultToString`) so the model sees the payload, not `[object Object]`. RCS summarizes a result but never removes the step — see [RCS](agent-config.md#runtimecontextsummarizerconfig-rcs).
 2. As a backstop, `ContextWindowBuilder` merges adjacent assistant messages, joining their text with a blank line. A message carrying `tool_calls` is never merged.
 
 ## Context pressure

@@ -109,6 +109,8 @@ const lookupAccount = defineTool(
 
 Read extra per-request values from `ctx.metadata` with `ctx.get("key")`. Full field list: [run-context.md](run-context.md).
 
+A tool may return a string or a plain object. Strings go to the model as-is. Objects are JSON-serialized so the model sees the fields (for example `{"matches":[...]}`) instead of `[object Object]`.
+
 Optional arguments are safe to leave out: an omitted argument is passed as `undefined`, so your parameter default applies and later parameters (including `ctx`) stay in place.
 
 **Caution:** injection matches the parameter *name*, read from the compiled function source. A bundler may rename a parameter when it shadows an outer variable of the same name (e.g. `ctx` becomes `ctx2`), and injection then silently stops. If your tool is created per request anyway, prefer closing over the `RunContext` value instead of declaring a `ctx` parameter.

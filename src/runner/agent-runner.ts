@@ -27,6 +27,7 @@ import type { LLMAdapter } from "../llm/adapters/base.js";
 import { LLMProxy } from "../llm/proxy.js";
 import type { LLMResponse, TokenUsage, ToolCallRequest } from "../llm/response.js";
 import { TokenCounter } from "../llm/token-counter.js";
+import { toolResultToString } from "../utils/serialization.js";
 import type { AgentSession, PendingInteraction, ToolCallRecord, TurnRecord } from "../session/models.js";
 import {
   createPendingInteraction,
@@ -1118,7 +1119,7 @@ export class AgentRunner {
               cleanArgs,
               this.runContext,
             );
-            resultStr = String(rawResult);
+            resultStr = toolResultToString(rawResult);
             const completed: ToolCallCompletedEvent = {
               ...createBaseEvent(NexusEventType.TOOL_CALL_COMPLETED, {
                 sessionId: activeSession.sessionId,

@@ -41,3 +41,14 @@ export function safeJsonDumps(obj: unknown, space?: number): string {
     return "";
   }
 }
+
+/**
+ * Turn a tool return value into the string the model and session store see.
+ * Strings stay as-is. Objects become JSON so the model does not receive
+ * `[object Object]`.
+ */
+export function toolResultToString(raw: unknown): string {
+  if (typeof raw === "string") return raw;
+  if (raw == null) return "";
+  return safeJsonDumps(raw) || String(raw);
+}

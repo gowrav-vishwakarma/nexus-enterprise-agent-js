@@ -63,6 +63,35 @@ describe("AgentRunner", () => {
     expect(sess!.turns[1]!.toolCalls).toHaveLength(0);
   });
 
+  it("JSON-serializes object tool results for the model", async () => {
+    const recall = defineTool(() => ({ matches: [{ key: "region", value: "Gujarat" }] }), {
+      name: "memory_recall",
+    });
+    const registry = new ToolRegistry();
+    registry.registerTool(recall);
+    const manager = new SessionManager();
+    const adapter = new MockLLMAdapter(testLlmConfig(), [
+      {
+        content: "",
+        toolCalls: [{ id: "call-1", name: "global.memory_recall", arguments: {} }],
+        usage: usage(4, 4),
+        finishReason: "tool_calls",
+      },
+      {
+        content: "Gujarat",
+        toolCalls: [],
+        usage: usage(8, 2),
+        finishReason: "stop",
+      },
+    ]);
+    const { runner } = makeRunner({ registry, sessionManager: manager, adapter });
+    await runner.run("what do you remember?", { sessionId: "runner-object-tool" });
+    const sess = await manager.loadSession("runner-object-tool");
+    expect(sess!.turns[0]!.toolCalls[0]!.rawResponse).toBe(
+      '{"matches":[{"key":"region","value":"Gujarat"}]}',
+    );
+  });
+
   // PYTHON: test_agent_runner_streaming_parity
   it("produces the same final result in streaming and blocking modes", async () => {
     const registry = new ToolRegistry();
