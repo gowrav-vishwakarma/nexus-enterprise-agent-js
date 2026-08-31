@@ -158,6 +158,46 @@ describe("RCS core", () => {
     expect(String(toolMessages[2]!.content)).toContain("Verbose error trace...");
   });
 
+  it("emits systemPrompt and toolContext on rcs.context_built", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const emitter = new NexusEventEmitter();
+    emitter.registerSink(
+      new CustomCallbackSink(async (event) => {
+        events.push(event as Record<string, unknown>);
+      }),
+    );
+    const agentConfig = rcsAgent({
+      persona: { system_prompt: "You are a test assistant." },
+    });
+    const builder = new ContextWindowBuilder(emitter);
+    const session = new AgentSession({ sessionId: "sess-1", agentId: "test-agent" });
+    session.turns.push(
+      new TurnRecord({
+        turnIndex: 0,
+        userMessage: "Run a tool",
+        toolCalls: [
+          new ToolCallRecord({
+            tcId: "TC1",
+            tcIndex: 1,
+            toolName: "lookup",
+            toolInput: { q: "test" },
+            rawResponse: "raw payload",
+          }),
+        ],
+      }),
+    );
+    await builder.build({
+      session,
+      agentConfig,
+      currentUserMessage: "Continue",
+    });
+    const built = events.find((e) => e.eventType === NexusEventType.RCS_CONTEXT_BUILT);
+    expect(built).toBeTruthy();
+    expect(String(built?.systemPrompt ?? "")).toContain("You are a test assistant.");
+    expect(Array.isArray(built?.toolContext)).toBe(true);
+    expect((built?.toolContext as Array<Record<string, unknown>>)[0]?.mode).toBe("raw");
+  });
+
   const noSummaryCases = [
     { id: "sentinel", update: { tc_id: "TC1", summary: "[]" } },
     { id: "empty", update: { tc_id: "TC1", summary: "" } },

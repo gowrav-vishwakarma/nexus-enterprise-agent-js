@@ -245,6 +245,37 @@ export class ContextWindowBuilder {
     return tc.rawResponse;
   }
 
+  private buildToolContext(
+    turns: TurnRecord[],
+    opts: {
+      rcsEnabled: boolean;
+      tcTagFormat: string;
+      includeSignature: boolean;
+      degradedTcIds: Set<string>;
+    },
+  ): Array<{ tcId: string; toolName: string; mode: "raw" | "summarized"; text: string }> {
+    const out: Array<{ tcId: string; toolName: string; mode: "raw" | "summarized"; text: string }> = [];
+    for (const turn of turns) {
+      for (const tc of turn.toolCalls) {
+        const summary = ContextWindowBuilder.summaryText(tc);
+        out.push({
+          tcId: opts.rcsEnabled
+            ? opts.tcTagFormat.replace("{n}", String(tc.tcIndex))
+            : tc.tcId,
+          toolName: tc.toolName,
+          mode: summary ? "summarized" : "raw",
+          text: this.renderToolMessage(tc, {
+            rcsEnabled: opts.rcsEnabled,
+            tcTagFormat: opts.tcTagFormat,
+            includeSignature: opts.includeSignature,
+            degraded: opts.degradedTcIds.has(tc.tcId),
+          }),
+        });
+      }
+    }
+    return out;
+  }
+
   async build(options: BuildContextOptions): Promise<Array<Record<string, unknown>>> {
     const {
       session,
@@ -397,6 +428,13 @@ export class ContextWindowBuilder {
         tcSummarizedCount,
         toolsDegradedCount: degradedTcIds.size,
         turnsDropped,
+        systemPrompt: systemContent,
+        toolContext: this.buildToolContext(turnsInWindow, {
+          rcsEnabled,
+          tcTagFormat,
+          includeSignature,
+          degradedTcIds,
+        }),
       });
     }
 

@@ -107,6 +107,15 @@ Each `NexusEvent` has `eventId`, `timestamp`, `sessionId`, `agentId`, `turnIndex
 | `turn.completed` | `tokensSaved` | One-time savings for this turn |
 | `turn.completed` | `recurringSavings` | Recurring input-token savings for this turn |
 
+### `rcs.context_built` observability
+
+When a `NexusEventEmitter` is attached, every LLM turn emits `rcs.context_built` after the context window is assembled. Optional fields (backward compatible):
+
+| Field | Description |
+|-------|-------------|
+| `systemPrompt` | Final system message after Nunjucks, memory/summary injectors, RCS block, and skills |
+| `toolContext` | Array of `{ tcId, toolName, mode: "raw" \| "summarized", text }` — what the model will see for each prior tool call this turn |
+
 ## runStream vs events
 
 | Mechanism | Best for | Can pause the run? |

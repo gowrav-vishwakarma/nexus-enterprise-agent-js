@@ -112,6 +112,13 @@ export interface RCSContextBuiltEvent extends NexusEvent {
   tcSummarizedCount?: number;
   toolsDegradedCount?: number;
   turnsDropped?: number;
+  systemPrompt?: string;
+  toolContext?: Array<{
+    tcId: string;
+    toolName: string;
+    mode: "raw" | "summarized";
+    text: string;
+  }>;
 }
 
 export interface RCSTCSummarizedEvent extends NexusEvent {
