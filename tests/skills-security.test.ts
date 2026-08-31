@@ -16,6 +16,24 @@ describe("skill security", () => {
     expect(isPathWithinDirectory(resource, skillDir)).toBe(true);
   });
 
+  // PYTHON: test_is_path_within_directory_rejects_outside
+  it("rejects a path outside the skill directory", () => {
+    const skillDir = join(FIXTURES, "code-review");
+    expect(isPathWithinDirectory(join(FIXTURES, "other", "file.md"), skillDir)).toBe(false);
+  });
+
+  // PYTHON: test_is_path_within_directory_rejects_sibling_prefix
+  it("rejects a sibling directory that only shares a name prefix", () => {
+    const skillDir = join(FIXTURES, "code-review");
+    expect(isPathWithinDirectory(`${skillDir}-evil/steal.md`, skillDir)).toBe(false);
+  });
+
+  // PYTHON: test_is_path_within_directory_accepts_directory_itself
+  it("accepts the skill directory itself", () => {
+    const skillDir = join(FIXTURES, "code-review");
+    expect(isPathWithinDirectory(skillDir, skillDir)).toBe(true);
+  });
+
   // PYTHON: test_path_traversal_blocked
   it("blocks path traversal out of the skill directory", () => {
     const skillDir = join(mkdtempSync(join(tmpdir(), "nexus-skill-sec-")), "skill");

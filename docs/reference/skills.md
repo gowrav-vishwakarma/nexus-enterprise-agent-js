@@ -145,6 +145,14 @@ When `inject_learned: true`, the runner searches the store (up to `retrieval_k` 
 - Script execution off by default (`allowScripts: false`)
 - Tenant/user static folders require `allow_tenant_skills` / `allow_user_skills`
 
+### Resource path confinement
+
+`read_skill_resource` goes through `validateResourcePath`, which rejects a path unless it resolves to the skill directory itself or something beneath it, and refuses any symlink along the way. The comparison is separator-aware, so a sibling folder that merely shares a name prefix (`code-review-evil` for root `code-review`) is rejected.
+
+Reuse `isPathWithinDirectory(path, directory)` if you build your own file tool. It returns `true` only for the directory itself or a genuine descendant.
+
+The script sandbox is a different matter: `LocalProcessSandbox` spawns a child process with a timeout and **no filesystem confinement**. Treat enabling `allowScripts` as running that code with your process's own permissions.
+
 ```ts
 import { createRunContext, SkillsRegistry } from "nexus-enterprise-agent";
 

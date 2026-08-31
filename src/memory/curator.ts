@@ -5,6 +5,7 @@ import {
   getCuratorPrompt,
   type MemoryConfig,
 } from "../config/memory.js";
+import { NexusEventType } from "../events/models.js";
 import type { RunContext } from "../tools/context.js";
 import {
   resolveCrossSessionNamespace,
@@ -231,7 +232,7 @@ export class MemoryCurator {
       }
       if (this.eventEmitter && entityCount) {
         await this.eventEmitter.emit({
-          eventType: "entity_extracted",
+          eventType: NexusEventType.ENTITY_EXTRACTED,
           sessionId: session.sessionId,
           agentId: session.agentId,
           turnIndex,

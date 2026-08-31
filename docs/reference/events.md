@@ -79,16 +79,20 @@ It logs JSON lines for `tool_call.*` and `human_in_loop.*` events, and ignores e
 | Category | `NexusEventType` values |
 |----------|-------------------------|
 | Agent | `agent.started`, `agent.completed`, `agent.error` |
-| Turn | `turn.started`, `turn.completed`, `turn.error` |
+| Turn | `turn.started`, `turn.completed` (`turn.error` is reserved, see below) |
 | Tool | `tool_call.started`, `tool_call.completed`, `tool_call.error` |
 | LLM | `llm.call_started`, `llm.call_completed`, `llm.stream.chunk`, `llm.call_error` |
 | RCS | `rcs.tc_summarized`, `rcs.context_built`, `rcs.compactor_triggered`, `rcs.compactor_completed`, `rcs.cross_session_tc_reference` |
 | Memory | `memory.entity_extracted` |
 | Context summary | `context.summarized` |
-| Session | `session.created`, `session.loaded`, `session.saved` |
-| Multi-agent | `agent_group.started`, `agent_group.completed`, `agent.handoff` |
-| Realtime / voice | `realtime.session_started`, `realtime.transcribed`, `realtime.barge_in`, `realtime.response_completed`, `realtime.session_ended`, `realtime.error`, `realtime.reconnect` |
+| Session | reserved, see below |
+| Multi-agent | reserved, see below |
+| Realtime / voice | `realtime.session_started`, `realtime.transcribed`, `realtime.barge_in`, `realtime.response_completed`, `realtime.session_ended`, `realtime.error` |
 | Human-in-loop | `human_in_loop.requested`, `human_in_loop.response` (emitted on pause/resume) |
+
+### Reserved types (declared, never emitted)
+
+`NexusEventType` also declares `turn.error`, `session.created`, `session.loaded`, `session.saved`, `agent_group.started`, `agent_group.completed`, `agent.handoff`, and `realtime.reconnect`. Nothing emits these today, so do not build a sink that waits for them. For group progress, read the `AgentGroupResult` returned by the orchestrator or consume its stream. For run failures, use `agent.error`.
 
 Each `NexusEvent` has `eventId`, `timestamp`, `sessionId`, `agentId`, `turnIndex`, and a `data` object with event-specific fields.
 
@@ -124,7 +128,7 @@ parseAgentConfig({
 });
 ```
 
-This attaches a default `StdoutEventSink` when you do not pass a custom emitter.
+This attaches a default `StdoutEventSink` **only when you do not pass your own `eventEmitter`**. A host that supplies an emitter has already chosen its sinks, so `trace_enabled` does not add stdout on top of them. Register `StdoutEventSink` yourself if you want both.
 
 ## Next steps
 

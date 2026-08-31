@@ -192,7 +192,9 @@ export class AgentRunner {
       this.hooks.onTurnEnd = options.onTurnEnd;
     }
 
-    if (this.config.trace_enabled || this.config.traceEnabled) {
+    // Only trace to stdout when we own the emitter. A host that passes its own
+    // emitter has already chosen its sinks.
+    if (!options.eventEmitter && (this.config.trace_enabled || this.config.traceEnabled)) {
       this.eventEmitter.registerSink(new StdoutEventSink());
     }
 

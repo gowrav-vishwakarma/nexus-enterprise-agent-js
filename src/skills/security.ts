@@ -1,12 +1,17 @@
 /** Security checks for skill file access. */
 
 import { lstatSync, readFileSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 
+/**
+ * True when `path` is the directory itself or sits inside it.
+ * The separator matters: `/skills-evil` must not pass for root `/skills`.
+ */
 export function isPathWithinDirectory(path: string, directory: string): boolean {
   try {
-    resolve(path).startsWith(resolve(directory));
-    return true;
+    const root = resolve(directory);
+    const target = resolve(path);
+    return target === root || target.startsWith(root.endsWith(sep) ? root : root + sep);
   } catch {
     return false;
   }
@@ -15,9 +20,10 @@ export function isPathWithinDirectory(path: string, directory: string): boolean 
 export function hasSymlinkInPath(path: string, directory: string): boolean {
   const dir = resolve(directory);
   try {
-    const rel = path.replace(dir, "").split(/[/\\]/).filter(Boolean);
+    const rel = relative(dir, resolve(path));
+    if (rel.startsWith("..")) return true;
     let current = dir;
-    for (const part of rel) {
+    for (const part of rel.split(sep).filter(Boolean)) {
       current = join(current, part);
       try {
         if (lstatSync(current).isSymbolicLink()) return true;
@@ -36,13 +42,12 @@ export function validateResourcePath(
   resourcePath: string,
 ): string {
   const skillRoot = resolve(skillDir);
-  const candidate = join(skillRoot, resourcePath);
-  if (hasSymlinkInPath(candidate, skillRoot)) {
-    throw new Error(`Symlink detected in resource path: ${resourcePath}`);
-  }
-  const resolved = resolve(candidate);
-  if (!resolved.startsWith(skillRoot)) {
+  const resolved = resolve(join(skillRoot, resourcePath));
+  if (!isPathWithinDirectory(resolved, skillRoot)) {
     throw new Error(`Resource path escapes skill directory: ${resourcePath}`);
+  }
+  if (hasSymlinkInPath(resolved, skillRoot)) {
+    throw new Error(`Symlink detected in resource path: ${resourcePath}`);
   }
   if (!statSync(resolved).isFile()) {
     throw new Error(`Resource not found: ${resourcePath}`);

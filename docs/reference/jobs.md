@@ -1,6 +1,8 @@
 # Jobs, artifacts, caching, and checkpoints
 
-**Who this is for:** Developers who need work that outlives a single chat turn — scheduled runs, files, repeated results, and crash recovery.
+**Who this is for:** Developers who need work that outlives a single chat turn — scheduled runs, files, and repeated results.
+
+These are **host-wired primitives, not a finished scheduler or object store.** Before you build on them, read the limits in each section: `JobScheduler` does not parse cron expressions and has no locking, retries, or dead-letter queue; `ArtifactStore` has no listing; and a checkpoint is a snapshot you store yourself, not automatic crash recovery. A production host usually keeps its own queue table and uses these as adapters.
 
 ## Key terms
 
@@ -65,6 +67,15 @@ scheduler.startBackground(60);
 
 Disabled jobs (`enabled: false`) are always skipped.
 
+### What the scheduler does not do
+
+- **No locking or lease.** Two processes pointed at the same store will both list and both run the same job. Add a claim column if you run more than one worker.
+- **No retries or dead-letter queue.** If `runFactory` throws, the job is not rescheduled and nothing records the failure. Track attempts yourself.
+- **No overlap guard.** `startBackground` uses a plain interval; a job slower than the tick can start again before the previous run finishes. Calling `startBackground` twice leaks the first timer, and `stop()` does not wait for in-flight runs.
+- **No `last_run_at` or status.** Bookkeeping belongs in your store and your `isDue`.
+
+If you already have a durable queue table with claims and retries, keep it and call `AgentRunner` directly. This scheduler is a convenience for simple hosts.
+
 ## Artifacts
 
 An **artifact** is a file a run produces or consumes. `LocalArtifactStore` writes them under a user-scoped directory, so `get()` with another tenant's context returns `null`.
@@ -111,7 +122,15 @@ if (hit == null) {
 
 ## Run checkpoints
 
-A **checkpoint** is a snapshot of where a run had got to, so a process that crashes or redeploys mid-run can resume instead of replaying the whole conversation.
+A **checkpoint** is a snapshot of where a run had got to, for **you** to store. It is a plain data object, not an automatic recovery mechanism.
+
+Be precise about what this does and does not give you:
+
+- `checkpointFromSession()` builds the snapshot. Persist it wherever you like.
+- `AgentRunner` never reads a checkpoint. There is no "resume this run from its checkpoint" call.
+- Continuity across process restarts comes from the **session** instead: run again with the same `sessionId` and the runner loads the stored turns.
+- To continue a run that paused for a human or a client tool, use `AgentRunner.resume(sessionId, results)` — that path uses `pendingInteractions` on the session, not this snapshot.
+- `pendingToolCalls` is always empty in the snapshot today.
 
 ```ts
 import { checkpointFromSession } from "nexus-enterprise-agent";

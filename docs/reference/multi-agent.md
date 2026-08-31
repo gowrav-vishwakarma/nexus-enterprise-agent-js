@@ -17,6 +17,8 @@
 | `pipeline` | Implemented | Members run sequentially |
 | `parallel` | Implemented | All members run on the same input; outputs merged per `aggregation_strategy` (`concat`, `first_complete`, `vote`) |
 
+Known limits before you build on these: `supervisor.delegate_to_*` tools time out after 60 seconds, so a long specialist run is cut short; member chat ids are fixed when the orchestrator is constructed and do not change if you later pass `run({ sessionId })`; `aggregation_strategy: "supervisor"` falls back to `concat`; and there is no cap on delegation depth or fan-out.
+
 ## AgentGroupConfig
 
 Groups do **not** have an `llm` field. Each member's `AgentConfig` has its own LLM.
@@ -69,7 +71,7 @@ const result = await orchestrator.run({ userMessage: "Analyze Q4 revenue" });
 | Strategy | Extra LLM call? | What it does |
 |----------|-----------------|--------------|
 | `concat` | No | Labelled join of every member's `finalResponse` |
-| `first_complete` | No | First finished member wins |
+| `first_complete` | No | First member **in declaration order** that returned a response. All members still run to completion first — this is not a race |
 | `vote` | No | Plurality of identical `finalResponse` strings |
 | `consensus` | Yes (held) | Would ask another model to merge replies. **Not shipped** |
 
