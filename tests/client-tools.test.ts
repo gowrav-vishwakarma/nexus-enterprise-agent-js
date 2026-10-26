@@ -2,6 +2,7 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 import { MockLLMAdapter } from "../src/eval/mock-llm.js";
+import { PENDING_SUPERSEDED } from "../src/runner/agent-runner.js";
 import { defineTool } from "../src/tools/decorators.js";
 import { ToolRegistry } from "../src/tools/registry.js";
 import { collectStream, makeRunner, testAgentConfig, testLlmConfig } from "./helpers.js";
@@ -134,6 +135,53 @@ describe("client tools", () => {
     expect(resumed.finalResponse).toBe("All done.");
     const rendered = JSON.stringify(resumeAdapter.calls);
     expect(rendered).toContain("form filled by user");
+    expect(rendered).not.toContain(PENDING_SUPERSEDED);
+  });
+
+  // PYTHON: test_new_user_message_closes_unanswered_client_tool
+  it("closes an unanswered client tool when the user sends a new message", async () => {
+    const { runner } = makeRunner({
+      registry: clientRegistry(),
+      adapter: new MockLLMAdapter(testLlmConfig(), [
+        { toolCalls: [{ id: "call-fill_form", name: "fill_form", arguments: { field: "name" } }] },
+      ]),
+      config: testAgentConfig({ name: "client-tool-agent", turns: { max_turns: 5 } }),
+    });
+
+    const paused = await runner.run("fill it", { sessionId: "client-supersede" });
+    const oldTc = String(paused.pendingInteractions![0]!.tc_id);
+
+    const { runner: next, adapter: nextAdapter } = makeRunner({
+      registry: clientRegistry(),
+      sessionManager: runner.sessionManager,
+      adapter: new MockLLMAdapter(testLlmConfig(), [
+        {
+          toolCalls: [
+            {
+              id: "call-request_user_input",
+              name: "request_user_input",
+              arguments: { question: "Anything else?" },
+            },
+          ],
+        },
+      ]),
+      config: testAgentConfig({ name: "client-tool-agent", turns: { max_turns: 5 } }),
+    });
+
+    const followed = await next.run("never mind, skip the form", { sessionId: "client-supersede" });
+    expect(followed.status).toBe("paused");
+    expect(followed.pendingInteractions).toHaveLength(1);
+    expect(followed.pendingInteractions![0]!.tool_name).toBe("request_user_input");
+    expect(followed.pendingInteractions![0]!.tc_id).not.toBe(oldTc);
+
+    const rendered = JSON.stringify(nextAdapter.calls);
+    expect(rendered).toContain(PENDING_SUPERSEDED);
+    expect(rendered).toContain("never mind, skip the form");
+
+    const stored = await runner.sessionManager.loadSession("client-supersede");
+    expect(stored?.pendingInteractions[0]?.toolName).toBe("request_user_input");
+    const closed = stored?.turns.flatMap((turn) => turn.toolCalls).find((tc) => tc.tcId === oldTc);
+    expect(closed?.rawResponse).toBe(PENDING_SUPERSEDED);
   });
 
   // PYTHON: test_streaming_client_tool_emits_paused_with_pending_interactions

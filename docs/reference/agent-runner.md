@@ -126,6 +126,8 @@ const result = await runner.resume({
 
 Raises if the session is missing or has no pending interactions.
 
+If a paused session gets a new user message through `run()` / `runStream()` instead of `resume()`, the runner closes the pending calls with `PENDING_SUPERSEDED` ("Not answered by user: the user sent a new message instead.") and clears `pendingInteractions` before running the message.
+
 ## Runtime tool granting
 
 Adjust a live agent's tool allow-list between turns (schemas are re-filtered each turn):

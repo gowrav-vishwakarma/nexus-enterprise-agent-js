@@ -41,7 +41,7 @@ export {
   DEFAULT_CONTEXT_SUMMARY_PROMPT,
 } from "./config/defaults.js";
 
-export { AgentRunner } from "./runner/agent-runner.js";
+export { AgentRunner, PENDING_SUPERSEDED } from "./runner/agent-runner.js";
 export {
   type AgentRunResult,
   type AgentStreamEvent,

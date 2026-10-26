@@ -69,6 +69,10 @@ import {
   type AgentStreamEvent,
 } from "./result.js";
 
+// Result given to a client tool / elicitation the user moved on from (see
+// AgentRunner.closePendingInteractions).
+export const PENDING_SUPERSEDED = "Not answered by user: the user sent a new message instead.";
+
 export class RunCancelled extends Error {
   constructor(message = "Run cancelled.") {
     super(message);
@@ -523,6 +527,26 @@ export class AgentRunner {
     return toolCalls.slice(0, limit);
   }
 
+  /**
+   * A new user message ends whatever the paused run was waiting for.
+   *
+   * Each pending tool call gets a "not run" result (so the model sees it never
+   * happened) and the list is cleared. Left open, the next pause would list them
+   * again next to the new ones: the client asks the same question and repeats old
+   * actions on every message.
+   */
+  private closePendingInteractions(session: AgentSession): void {
+    const openIds = new Set(session.pendingInteractions.map((p) => p.tcId));
+    for (const turn of session.turns) {
+      for (const tc of turn.toolCalls) {
+        if (openIds.has(tc.tcId) && !tc.rawResponse) {
+          tc.rawResponse = PENDING_SUPERSEDED;
+        }
+      }
+    }
+    session.pendingInteractions = [];
+  }
+
   private maybePauseForHumanInLoop(session: AgentSession, runTurnIndex: number): boolean {
     const limit =
       this.config.turns?.humanInLoopAfterTurns ??
@@ -791,6 +815,9 @@ export class AgentRunner {
     this.streamSeq = session.streamSeq ?? 0;
     this.bindLoopSession(session);
     session.rcsEnabled = false;
+    if (userMessage && session.pendingInteractions.length > 0) {
+      this.closePendingInteractions(session);
+    }
     await this.maybeSaveSession(session);
     this.resolveToolsets();
     this.hydrateStateFromSession(session, initialContext);
