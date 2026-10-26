@@ -167,7 +167,7 @@ describe("RCS core", () => {
       }),
     );
     const agentConfig = rcsAgent({
-      persona: { system_prompt: "You are a test assistant." },
+      persona: { role: "Tester", goal: "Check context", system_prompt: "You are a test assistant." },
     });
     const builder = new ContextWindowBuilder(emitter);
     const session = new AgentSession({ sessionId: "sess-1", agentId: "test-agent" });
